@@ -160,6 +160,136 @@ async def create_reading(request: web.Request) -> web.Response:
     )
 
 
+def _package_json(pkg, items=None) -> dict:
+    out = {
+        "id": pkg["id"],
+        "created_by": pkg["created_by"],
+        "created_at": pkg["created_at"].isoformat() if pkg["created_at"] else None,
+        "item_count": pkg["item_count"],
+    }
+    if items is not None:
+        out["items"] = items
+    return out
+
+
+def _item_json(row) -> dict:
+    return {
+        "reading_id": row["reading_id"],
+        "probe_id": row["probe_id"],
+        "temp_c": row["temp_c"],
+        "status": row["status"],
+    }
+
+
+async def create_package(request: web.Request) -> web.Response:
+    """一键打包：把打包瞬间仍处于 pending/processing 的读数冻结进发车核对包。"""
+    user = require_user(request)
+    if user["role"] != "writer":
+        raise web.HTTPForbidden(
+            text=json.dumps({"detail": "仅记录员可执行一键打包"}, ensure_ascii=False),
+            content_type="application/json",
+        )
+    pool: asyncpg.Pool = request.app["pool"]
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            rows = await conn.fetch(
+                """
+                SELECT id, probe_id, temp_c, status
+                FROM probe_readings
+                WHERE status IN ('pending', 'processing')
+                ORDER BY id
+                FOR UPDATE
+                """
+            )
+            if not rows:
+                raise web.HTTPBadRequest(
+                    text=json.dumps(
+                        {"detail": "当前没有未办结读数可打包"}, ensure_ascii=False
+                    ),
+                    content_type="application/json",
+                )
+            pkg = await conn.fetchrow(
+                """
+                INSERT INTO departure_packages (created_by, created_at, item_count)
+                VALUES ($1, now(), $2)
+                RETURNING id, created_by, created_at, item_count
+                """,
+                user["username"],
+                len(rows),
+            )
+            items = []
+            for r in rows:
+                await conn.execute(
+                    """
+                    INSERT INTO departure_package_items
+                        (package_id, reading_id, probe_id, temp_c, status)
+                    VALUES ($1, $2, $3, $4, $5)
+                    """,
+                    pkg["id"],
+                    r["id"],
+                    r["probe_id"],
+                    r["temp_c"],
+                    r["status"],
+                )
+                items.append(
+                    {
+                        "reading_id": r["id"],
+                        "probe_id": r["probe_id"],
+                        "temp_c": r["temp_c"],
+                        "status": r["status"],
+                    }
+                )
+    return web.json_response(
+        {
+            **_package_json(pkg, items),
+            "message": f"已打包 {len(items)} 笔未办结读数",
+        },
+        status=201,
+    )
+
+
+async def list_packages(request: web.Request) -> web.Response:
+    require_user(request)
+    pool: asyncpg.Pool = request.app["pool"]
+    rows = await pool.fetch(
+        """
+        SELECT id, created_by, created_at, item_count
+        FROM departure_packages
+        ORDER BY id DESC
+        """
+    )
+    return web.json_response([_package_json(r) for r in rows])
+
+
+async def get_package(request: web.Request) -> web.Response:
+    require_user(request)
+    package_id = int(request.match_info["package_id"])
+    pool: asyncpg.Pool = request.app["pool"]
+    pkg = await pool.fetchrow(
+        """
+        SELECT id, created_by, created_at, item_count
+        FROM departure_packages
+        WHERE id = $1
+        """,
+        package_id,
+    )
+    if not pkg:
+        raise web.HTTPNotFound(
+            text=json.dumps({"detail": "发车核对包不存在"}, ensure_ascii=False),
+            content_type="application/json",
+        )
+    rows = await pool.fetch(
+        """
+        SELECT reading_id, probe_id, temp_c, status
+        FROM departure_package_items
+        WHERE package_id = $1
+        ORDER BY id
+        """,
+        package_id,
+    )
+    return web.json_response(_package_json(pkg, [_item_json(r) for r in rows]))
+
+
 async def on_startup(app: web.Application) -> None:
     pool = await create_pool()
     app["pool"] = pool
@@ -179,6 +309,9 @@ def create_app() -> web.Application:
     app.router.add_post("/api/auth/login", login)
     app.router.add_get("/api/readings", list_readings)
     app.router.add_post("/api/readings", create_reading)
+    app.router.add_post("/api/packages", create_package)
+    app.router.add_get("/api/packages", list_packages)
+    app.router.add_get("/api/packages/{package_id:[0-9]+}", get_package)
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
     return app

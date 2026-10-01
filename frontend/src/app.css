@@ -127,7 +127,28 @@ td {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
   margin-bottom: 1rem;
+}
+
+.navtabs {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.tab {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.tab.active {
+  background: #0369a1;
+  color: #fff;
+}
+
+tr.selected td {
+  background: #f0f9ff;
 }
 
 .user {

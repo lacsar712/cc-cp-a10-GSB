@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "preact/hooks";
+import { PackageDesk } from "./Packages.jsx";
 
 const TOKEN_KEY = "coldchain_token";
 const USER_KEY = "coldchain_user";
@@ -29,6 +30,7 @@ export function App() {
   const [loginForm, setLoginForm] = useState({ username: "logger", password: "log123456" });
   const [submitForm, setSubmitForm] = useState({ probe_id: "", temp_c: "" });
   const [rows, setRows] = useState([]);
+  const [view, setView] = useState("readings");
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
@@ -89,6 +91,7 @@ export function App() {
     setToken(null);
     setUser(null);
     setRows([]);
+    setView("readings");
   }
 
   async function onSubmit(e) {
@@ -168,6 +171,22 @@ export function App() {
           <h1>冷链探头超温台</h1>
           <p class="sub">温度不超过 8℃ 为合格，否则为超温。</p>
         </div>
+        <nav class="navtabs">
+          <button
+            type="button"
+            class={view === "readings" ? "tab active" : "tab"}
+            onClick={() => setView("readings")}
+          >
+            读数列表
+          </button>
+          <button
+            type="button"
+            class={view === "packages" ? "tab active" : "tab"}
+            onClick={() => setView("packages")}
+          >
+            发车核对
+          </button>
+        </nav>
         <div class="user">
           {user?.username}（{isWriter ? "记录员" : "值班员"}）
           <button type="button" class="secondary" style={{ marginLeft: "0.5rem" }} onClick={logout}>
@@ -176,7 +195,11 @@ export function App() {
         </div>
       </div>
 
-      {isWriter && (
+      {view === "packages" && (
+        <PackageDesk authHeaders={authHeaders} isWriter={isWriter} />
+      )}
+
+      {view === "readings" && isWriter && (
         <div class="card">
           <h2 style={{ marginTop: 0, fontSize: "1.1rem" }}>提交读数</h2>
           <form onSubmit={onSubmit}>
@@ -214,6 +237,7 @@ export function App() {
         </div>
       )}
 
+      {view === "readings" && (
       <div class="card">
         <h2 style={{ marginTop: 0, fontSize: "1.1rem" }}>读数列表</h2>
         <table>
@@ -252,6 +276,7 @@ export function App() {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }
