@@ -7,6 +7,7 @@ from db import connect_sync, ensure_schema_sync, seed_if_empty_sync
 from rules import judge_temp
 
 POLL_SECONDS = float(os.environ.get("WORKER_POLL_SECONDS", "1.0"))
+PROCESS_SECONDS = float(os.environ.get("WORKER_PROCESS_SECONDS", "0"))
 
 
 def claim_one(conn):
@@ -47,6 +48,8 @@ def run_once(conn) -> bool:
     row = claim_one(conn)
     if not row:
         return False
+    if PROCESS_SECONDS > 0:
+        time.sleep(PROCESS_SECONDS)
     try:
         finish(conn, row["id"], float(row["temp_c"]))
     except Exception:

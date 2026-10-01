@@ -23,6 +23,25 @@ CREATE TABLE IF NOT EXISTS probe_readings (
     processed_at timestamptz
 );
 CREATE INDEX IF NOT EXISTS idx_probe_readings_status ON probe_readings (status, id);
+
+CREATE TABLE IF NOT EXISTS departure_packages (
+    id serial PRIMARY KEY,
+    item_count integer NOT NULL,
+    created_by text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS departure_package_items (
+    id serial PRIMARY KEY,
+    package_id integer NOT NULL REFERENCES departure_packages(id) ON DELETE CASCADE,
+    reading_id integer NOT NULL,
+    probe_id text NOT NULL,
+    temp_c double precision NOT NULL,
+    reading_status text NOT NULL,
+    created_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_departure_package_items_package
+    ON departure_package_items (package_id, id);
 """
 
 
